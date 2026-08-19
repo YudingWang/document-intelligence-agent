@@ -1,0 +1,30 @@
+{
+  "company": "Acme Cloud Inc.",
+  "document_title": "Vendor Security and Compliance Statement",
+  "security": {
+    "incident_notification": {
+      "formally_defined_criteria": true,
+      "definition": "A security incident is any confirmed event that actually or potentially jeopardizes the confidentiality, integrity, or availability of customer data or systems.",
+      "notification_sla": "Affected customers are notified within 24 hours of incident confirmation. Status updates are provided at least every 24 hours until resolution. Critical incidents impacting availability may include an initial notification within 1 hour of confirmation."
+    },
+    "third_parties": {
+      "personal_information_shared": true,
+      "description": "Yes. Personal information is transmitted, processed, stored, and disclosed to subprocessors retained by Acme Cloud. Third parties include Amazon Web Services (AWS) for infrastructure hosting and backups, Google Workspace for corporate email and collaboration, Stripe for payment processing, and Datadog for monitoring. These parties process data under written Data Processing Agreements and confidentiality obligations. Acme Cloud does not sell personal information."
+    },
+    "cloud_providers": [
+      "Amazon Web Services (AWS) as the primary cloud provider",
+      "Google Cloud Platform (GCP) for selected analytics workloads"
+    ],
+    "data_centers": {
+      "primary": "AWS us-east-1 (Northern Virginia, USA)",
+      "backup": "AWS us-west-2 (Oregon, USA)",
+      "analytics": "Google Cloud us-central1"
+    },
+    "monitoring": {
+      "application_performance_monitoring_apm": true,
+      "end_user_monitoring_eum": true,
+      "digital_experience_monitoring_dem": false,
+      "details": "Application Performance Monitoring (APM) is implemented with Datadog APM on all production services. End User Monitoring (EUM) is enabled as real-user monitoring for the web application. Digital Experience Monitoring (DEM) is not currently part of the standard monitoring process."
+    }
+  }
+}
