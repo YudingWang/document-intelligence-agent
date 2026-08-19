@@ -1,4 +1,4 @@
-"""Bounded LangGraph agent for one question against one indexed document.
+"""Bounded LangGraph agent for one question against one or more indexed documents.
 
 Flow (max two retrievals, at most one generation):
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class AgentState(TypedDict, total=False):
     question: str
-    document_id: str
+    document_ids: list[str]
     query: str
     search_attempts: int
     chunks: list[RetrievedChunk]
@@ -80,11 +80,12 @@ class DocumentQAAgent:
     async def answer(
         self,
         question: str,
-        document_id: str,
+        document_ids: str | list[str],
         history: list[ChatTurn] | None = None,
     ) -> QAResult:
-        """Answer one question using only chunks from `document_id`."""
+        """Answer one question using only chunks from the selected document(s)."""
         started = time.perf_counter()
+        ids = [document_ids] if isinstance(document_ids, str) else list(document_ids)
         resolved = question
         llm_ms = 0
         if history:
@@ -94,7 +95,7 @@ class DocumentQAAgent:
         state = await self._graph.ainvoke(
             {
                 "question": resolved,
-                "document_id": document_id,
+                "document_ids": ids,
                 "query": resolved,
                 "search_attempts": 0,
                 "chunks": [],
@@ -120,15 +121,14 @@ class DocumentQAAgent:
 
     async def _retrieve(self, state: AgentState) -> dict[str, Any]:
         started = time.perf_counter()
-        document_id = state["document_id"]
-        hits = self._tools.search_document(
-            document_id,
+        hits = self._tools.search_documents(
+            state["document_ids"],
             state["query"],
             k=self._settings.retrieval_top_k,
         )
         expanded: list[RetrievedChunk] = []
         for hit in hits:
-            expanded.extend(self._tools.read_document_section(document_id, hit.chunk_id))
+            expanded.extend(self._tools.read_document_section(hit.document_id, hit.chunk_id))
         chunks = merge_chunks(state.get("chunks") or [], hits + expanded)
         elapsed = int((time.perf_counter() - started) * 1000)
         attempt = int(state.get("search_attempts") or 0) + 1

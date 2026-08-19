@@ -11,18 +11,29 @@ const SAMPLE_QUESTIONS = [
 
 async function api(path, options) {
   const response = await fetch(path, options);
-  const body = await response.json().catch(() => ({}));
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
   if (!response.ok) {
     throw new Error(body.error || `Request failed (${response.status})`);
   }
   return body;
 }
 
-function citationText(citation) {
-  const bits = [citation.source];
-  if (citation.page) bits.push(`p. ${citation.page}`);
-  if (citation.json_path) bits.push(citation.json_path);
-  return bits.filter(Boolean).join(" · ");
+function CitationList({ citations }) {
+  if (!citations?.length) {
+    return <span className="cite">No citation</span>;
+  }
+  return (
+    <div className="cite-list">
+      {citations.map((citation, index) => (
+        <span className="cite-chip" key={`${citation.chunk_id || citation.json_path || citation.page}-${index}`}>
+          <span>{citation.source}</span>
+          {citation.page ? <span>p. {citation.page}</span> : null}
+          {citation.json_path ? <code>{citation.json_path}</code> : null}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function autosize(el) {
@@ -53,7 +64,7 @@ function questionsFromJson(text) {
 
 export default function App() {
   const [documents, setDocuments] = useState([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
   const [tab, setTab] = useState("batch");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -65,15 +76,30 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [dragging, setDragging] = useState(false);
 
-  const selected = useMemo(
-    () => documents.find((doc) => doc.document_id === selectedId),
-    [documents, selectedId]
+  const selectedDocs = useMemo(
+    () => documents.filter((doc) => selectedIds.includes(doc.document_id)),
+    [documents, selectedIds]
   );
 
   async function refreshDocuments(preferredId) {
     const data = await api("/api/v1/documents");
-    setDocuments(data.documents || []);
-    setSelectedId(preferredId || data.documents?.[0]?.document_id || "");
+    const docs = data.documents || [];
+    setDocuments(docs);
+    setSelectedIds((current) => {
+      const valid = current.filter((id) => docs.some((doc) => doc.document_id === id));
+      if (preferredId && docs.some((doc) => doc.document_id === preferredId)) {
+        return valid.includes(preferredId) ? valid : [...valid, preferredId];
+      }
+      if (valid.length) return valid;
+      const sample = docs.find((doc) => doc.is_sample);
+      if (sample) return [sample.document_id];
+      return docs[0] ? [docs[0].document_id] : [];
+    });
+    const sample = docs.find((doc) => doc.is_sample);
+    if (sample && (!preferredId || preferredId === sample.document_id)) {
+      const packed = await api("/api/v1/sample/questions");
+      if (packed.questions?.length) setQuestions(packed.questions);
+    }
   }
 
   useEffect(() => {
@@ -83,7 +109,40 @@ export default function App() {
   useEffect(() => {
     setResults([]);
     setMessages([]);
-  }, [selectedId]);
+  }, [selectedIds.join("|")]);
+
+  function toggleDocument(documentId) {
+    setSelectedIds((current) => {
+      if (current.includes(documentId)) {
+        return current.length === 1 ? current : current.filter((id) => id !== documentId);
+      }
+      return [...current, documentId];
+    });
+  }
+
+  async function deleteDocument(documentId) {
+    const doc = documents.find((item) => item.document_id === documentId);
+    if (doc?.is_sample) {
+      const confirmed = window.confirm(
+        "This is the built-in SAMPLE document for demos. Remove it anyway?\n\nRestarting the API will restore it."
+      );
+      if (!confirmed) return;
+    }
+    setError("");
+    try {
+      const data = await api(`/api/v1/documents/${documentId}`, { method: "DELETE" });
+      const remaining = data.documents || [];
+      setDocuments(remaining);
+      setSelectedIds((current) => {
+        const next = current.filter((id) => id !== documentId);
+        if (next.length) return next;
+        return remaining[0] ? [remaining[0].document_id] : [];
+      });
+      setStatus("Document removed");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function uploadDocument(file) {
     if (!file) return;
@@ -105,8 +164,8 @@ export default function App() {
   }
 
   async function runBatch() {
-    if (!selectedId) {
-      setError("Upload a document first.");
+    if (!selectedIds.length) {
+      setError("Select at least one document.");
       return;
     }
     const questionList = questions.map((line) => line.trim()).filter(Boolean);
@@ -122,7 +181,7 @@ export default function App() {
         type: "application/json",
       });
       const form = new FormData();
-      form.append("document_id", selectedId);
+      form.append("document_ids", selectedIds.join(","));
       form.append("questions", blob, "questions.json");
       const data = await api("/api/v1/qa/batch", { method: "POST", body: form });
       setResults(data.results || []);
@@ -136,7 +195,7 @@ export default function App() {
 
   async function sendChat(event) {
     event.preventDefault();
-    if (!selectedId || !draft.trim()) return;
+    if (!selectedIds.length || !draft.trim()) return;
     const question = draft.trim();
     const history = messages.slice(-6).map((item) => ({
       role: item.role === "agent" ? "agent" : "user",
@@ -150,7 +209,7 @@ export default function App() {
       const data = await api("/api/v1/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document_id: selectedId, message: question, history }),
+        body: JSON.stringify({ document_ids: selectedIds, message: question, history }),
       });
       setMessages((current) => [
         ...current,
@@ -169,7 +228,7 @@ export default function App() {
   }
 
   function downloadResults() {
-    const blob = new Blob([JSON.stringify({ document_id: selectedId, results }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ document_ids: selectedIds, results }, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -210,8 +269,9 @@ export default function App() {
           <div className="eyebrow">Document-grounded QA</div>
           <h1>Document Intelligence Agent</h1>
           <p className="lede">
-            Upload a PDF or JSON source, then ask questions. Answers come only from the
-            selected document, with citations and an explicit refusal when evidence is missing.
+            Upload PDF or JSON sources, select one or more documents, then ask questions.
+            Answers come only from the selected set, with citations and an explicit refusal
+            when evidence is missing.
           </p>
         </div>
         <nav className="header-links" aria-label="Service links">
@@ -230,6 +290,10 @@ export default function App() {
             <h2>Documents</h2>
             <span className="count">{documents.length}</span>
           </div>
+          <p className="sample-hint">
+            Click documents to include them in search. A Sample file is preloaded for demos — don’t
+            delete it unless you mean to.
+          </p>
           <label
             className={`drop ${dragging ? "dragging" : ""}`}
             onDragOver={(event) => {
@@ -260,20 +324,41 @@ export default function App() {
           </label>
           <div className="doc-list">
             {documents.length === 0 && (
-              <p className="empty">No documents yet. Start with a sample JSON or PDF.</p>
+              <p className="empty">No documents yet. Upload a PDF or JSON to get started.</p>
             )}
             {documents.map((doc) => (
-              <button
+              <div
                 key={doc.document_id}
-                className={`doc-item ${doc.document_id === selectedId ? "active" : ""}`}
-                onClick={() => setSelectedId(doc.document_id)}
+                className={`doc-item ${selectedIds.includes(doc.document_id) ? "active" : ""}`}
               >
-                <div className="doc-name">{doc.filename}</div>
-                <small>
-                  {doc.file_type.toUpperCase()} · {doc.chunks} chunks
-                  {doc.pages ? ` · ${doc.pages} pages` : ""} · {doc.status}
-                </small>
-              </button>
+                <button
+                  type="button"
+                  className="doc-select"
+                  onClick={() => toggleDocument(doc.document_id)}
+                >
+                  <div className="doc-name">
+                    <span
+                      className={`tick ${selectedIds.includes(doc.document_id) ? "on" : ""}`}
+                      aria-hidden="true"
+                    />
+                    {doc.is_sample ? <span className="sample-badge">Sample</span> : null}
+                    {doc.filename}
+                  </div>
+                  <small>
+                    {doc.file_type.toUpperCase()} · {doc.chunks} chunks
+                    {doc.pages ? ` · ${doc.pages} pages` : ""}
+                    {doc.is_sample ? " · demo" : ` · ${doc.document_id.slice(-6)}`}
+                  </small>
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Remove ${doc.filename}`}
+                  onClick={() => deleteDocument(doc.document_id)}
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
           {status && <p className="status">{status}</p>}
@@ -291,8 +376,12 @@ export default function App() {
               </button>
             </div>
             <p className="active-doc">
-              Active document:{" "}
-              <strong>{selected ? selected.filename : "none selected"}</strong>
+              Searching:{" "}
+              <strong>
+                {selectedDocs.length
+                  ? selectedDocs.map((doc) => doc.filename).join(", ")
+                  : "none selected"}
+              </strong>
             </p>
           </div>
 
@@ -352,7 +441,7 @@ export default function App() {
                 {results.length === 0 ? (
                   <div className="empty-results">
                     <strong>No answers yet</strong>
-                    <p>Upload a document, then run the question list to see grounded answers and citations.</p>
+                    <p>Select one or more documents, then run the question list to see grounded answers and citations.</p>
                   </div>
                 ) : (
                   results.map((item) => (
@@ -364,7 +453,7 @@ export default function App() {
                           {item.supported ? "supported" : "not found"}
                         </span>
                         <span className="cite">
-                          {(item.citations || []).map(citationText).join("; ") || "No citation"}
+                          <CitationList citations={item.citations} />
                         </span>
                       </div>
                     </article>
@@ -380,7 +469,7 @@ export default function App() {
                     <strong>Ask a follow-up</strong>
                     <p>
                       History resolves references like “what region?”, then the answer is grounded
-                      only in the selected document.
+                      only in the selected document(s).
                     </p>
                   </div>
                 )}
@@ -388,7 +477,7 @@ export default function App() {
                   <div key={index} className={`bubble ${message.role}`}>
                     <div>{message.text}</div>
                     {message.citations?.length ? (
-                      <div className="cite">{message.citations.map(citationText).join("; ")}</div>
+                      <CitationList citations={message.citations} />
                     ) : null}
                   </div>
                 ))}
@@ -398,7 +487,7 @@ export default function App() {
                   type="text"
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Ask a question about the selected document..."
+                  placeholder="Ask a question about the selected document(s)..."
                 />
                 <button className="primary" disabled={indexing || answering}>
                   Send

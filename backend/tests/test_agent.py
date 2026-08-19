@@ -65,10 +65,10 @@ def _agent(tmp_path, llm, index) -> DocumentQAAgent:
     return DocumentQAAgent(settings, llm, tools)
 
 
-def _chunk(chunk_id: str, text: str, page: int = 1) -> RetrievedChunk:
+def _chunk(chunk_id: str, text: str, page: int = 1, document_id: str = "doc_1") -> RetrievedChunk:
     return RetrievedChunk(
         chunk_id=chunk_id,
-        document_id="doc_1",
+        document_id=document_id,
         source="policy.pdf",
         text=text,
         page=page,
@@ -137,6 +137,29 @@ async def test_chat_history_rewrites_follow_up(tmp_path) -> None:
     assert index.queries[0] == "What AWS hosting region does the document specify?"
     assert result.question == "What region?"
     assert result.supported is True
+
+
+@pytest.mark.asyncio
+async def test_agent_retrieves_from_multiple_documents(tmp_path) -> None:
+    aws = _chunk("a1", "The company uses AWS as its primary cloud provider.", document_id="doc_a")
+    region = _chunk("b1", "Primary region is us-east-1 in Virginia.", document_id="doc_b")
+
+    class PerDocIndex:
+        def search(self, query: str, document_id: str, k: int) -> list[RetrievedChunk]:
+            return [aws] if document_id == "doc_a" else [region]
+
+        def get_by_ids(self, ids: list[str]) -> list[RetrievedChunk]:
+            by_id = {aws.chunk_id: aws, region.chunk_id: region}
+            return [by_id[item] for item in ids if item in by_id]
+
+    llm = SequenceLLM(
+        [GroundedAnswer(answer="AWS in us-east-1.", supported=True, used_chunk_ids=["a1", "b1"])]
+    )
+    result = await _agent(tmp_path, llm, PerDocIndex()).answer(
+        "Which cloud provider and region?", ["doc_a", "doc_b"]
+    )
+    assert result.supported is True
+    assert set(llm.seen_chunks[0]) == {"a1", "b1"}
 
 
 def test_merge_chunks_dedupes_and_keeps_higher_score() -> None:

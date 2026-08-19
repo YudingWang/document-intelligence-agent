@@ -6,7 +6,7 @@ NOT_FOUND_INSTRUCTION = (
 
 SYSTEM_PROMPT = """You are a document analysis agent.
 
-Answer the user question using ONLY the retrieved evidence from the selected document.
+Answer the user question using ONLY the retrieved evidence from the selected document(s).
 Do not use general knowledge. Do not guess. Do not fill gaps from training data.
 
 Rules:

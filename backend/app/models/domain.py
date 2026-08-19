@@ -68,4 +68,5 @@ class DocumentRecord(BaseModel):
     status: Literal["ready", "failed"] = "ready"
     pages: int | None = None
     chunks: int = 0
+    is_sample: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

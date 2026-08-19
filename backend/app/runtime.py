@@ -5,6 +5,7 @@ Used by the FastAPI lifespan and the CLI so both entrypoints share the same grap
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from app.agents.graph import DocumentQAAgent
@@ -16,6 +17,8 @@ from app.repositories.vector_index import create_vector_index
 from app.services.ingestion import IngestionService
 from app.services.qa import QAService
 from app.tools.documents import DocumentTools
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -50,6 +53,10 @@ def build_container(
         uploads_dir=data_dir / "uploads",
     )
     qa = QAService(settings, catalog, agent)
+    try:
+        ingestion.ensure_sample()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sample document was not seeded: %s", exc)
     return AppContainer(
         settings=settings,
         catalog=catalog,

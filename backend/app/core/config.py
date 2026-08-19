@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     vector_backend: str = "chroma"
     embedding_backend: str = "openai"
     data_dir: Path = Field(default=Path("./data"))
+    seed_sample_document: bool = True
 
     @field_validator("openai_model")
     @classmethod

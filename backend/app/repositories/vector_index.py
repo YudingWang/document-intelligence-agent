@@ -24,6 +24,8 @@ class VectorIndex(Protocol):
 
     def get_by_ids(self, ids: list[str]) -> list[RetrievedChunk]: ...
 
+    def delete_document(self, document_id: str) -> None: ...
+
 
 class LangChainVectorIndex:
     def __init__(self, store: VectorStore) -> None:
@@ -68,6 +70,26 @@ class LangChainVectorIndex:
                 self._by_id[chunk.chunk_id] = chunk
                 found[chunk.chunk_id] = chunk
         return [found[chunk_id] for chunk_id in ids if chunk_id in found]
+
+    def delete_document(self, document_id: str) -> None:
+        ids = [
+            chunk_id
+            for chunk_id, chunk in list(self._by_id.items())
+            if chunk.document_id == document_id
+        ]
+        for chunk_id in ids:
+            self._by_id.pop(chunk_id, None)
+        if ids:
+            try:
+                self._store.delete(ids=ids)
+            except Exception:  # noqa: BLE001
+                pass
+        collection = getattr(self._store, "_collection", None)
+        if collection is not None:
+            try:
+                collection.delete(where={"document_id": document_id})
+            except Exception:  # noqa: BLE001
+                pass
 
     def _search_with_filter(
         self,

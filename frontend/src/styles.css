@@ -149,18 +149,70 @@ h1 { font-size: 40px; line-height: 1.12; }
 }
 .doc-item {
   width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 4px;
   text-align: left;
   border: 1px solid var(--line);
   background: white;
   border-radius: 12px;
-  padding: 12px 14px;
-  cursor: pointer;
+  padding: 6px 6px 6px 12px;
   height: auto;
 }
 .doc-item.active { border-color: var(--accent); background: #eef7f4; }
+.doc-select {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 6px 4px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+.doc-item .icon-btn { margin-top: 0; }
 .doc-item small, .empty, .status, .active-doc { color: var(--muted); }
-.doc-name { font-weight: 600; margin-bottom: 4px; word-break: break-word; }
+.doc-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+  word-break: break-word;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tick {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 4px;
+  background: white;
+  flex-shrink: 0;
+}
+.tick.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.sample-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #0f6e5c;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sample-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
 .empty { margin: 0; font-size: 14px; line-height: 1.45; }
+.empty code { font-size: 12px; }
 
 .workspace-toolbar {
   display: flex;
@@ -273,6 +325,24 @@ textarea, input[type="text"] {
 .empty-results p { margin: 0; line-height: 1.5; }
 
 .cite { color: var(--accent-dark); font-size: 12px; }
+.cite-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cite-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #eef7f4;
+  color: var(--accent-dark);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.cite-chip code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 .badge {
   display: inline-block;
   padding: 2px 8px;

@@ -75,6 +75,7 @@ def tmp_settings(tmp_path: Path) -> Settings:
         embedding_backend="fake",
         vector_backend="memory",
         data_dir=tmp_path / "data",
+        seed_sample_document=False,
         max_retrieval_attempts=2,
         batch_concurrency=2,
         retrieval_top_k=4,

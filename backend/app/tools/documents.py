@@ -28,6 +28,14 @@ class DocumentTools:
         self._catalog.get(document_id)
         return self._index.search(query=query, document_id=document_id, k=k)
 
+    def search_documents(
+        self, document_ids: list[str], query: str, k: int
+    ) -> list[RetrievedChunk]:
+        hits: list[RetrievedChunk] = []
+        for document_id in document_ids:
+            hits.extend(self.search_document(document_id, query, k))
+        return merge_chunks([], hits, limit=max(MAX_EVIDENCE_CHUNKS, k))
+
     def read_document_section(
         self, document_id: str, chunk_id: str, window: int = 1
     ) -> list[RetrievedChunk]:

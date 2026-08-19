@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import uuid
 from pathlib import Path
 
 from app.core.config import Settings
-from app.core.exceptions import LLMServiceError, UnreadableDocumentError, UnsupportedMediaError
+from app.core.exceptions import (
+    DocumentNotFoundError,
+    LLMServiceError,
+    UnreadableDocumentError,
+    UnsupportedMediaError,
+)
+from app.sample import SAMPLE_DOCUMENT_ID, SAMPLE_FILENAME, sample_data_dir
 from app.core.secrets import require_openai_key
 from app.loaders.chunking import chunk_json_leaves, chunk_pdf_pages
 from app.loaders.json_loader import flatten_json, parse_json_bytes
@@ -38,12 +45,20 @@ class IngestionService:
         self._uploads_dir = uploads_dir
         self._uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    def ingest(self, *, filename: str, content_type: str | None, data: bytes) -> DocumentRecord:
+    def ingest(
+        self,
+        *,
+        filename: str,
+        content_type: str | None,
+        data: bytes,
+        document_id: str | None = None,
+        is_sample: bool = False,
+    ) -> DocumentRecord:
         filename = safe_filename(filename)
         file_type = detect_file_type(filename, content_type, data)
         if self._settings.embedding_backend.lower() != "fake":
             require_openai_key(self._settings)
-        document_id = f"doc_{uuid.uuid4().hex[:12]}"
+        document_id = document_id or f"doc_{uuid.uuid4().hex[:12]}"
         dest = self._uploads_dir / document_id / filename
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
@@ -85,6 +100,7 @@ class IngestionService:
             status="ready",
             pages=page_count,
             chunks=len(chunks),
+            is_sample=is_sample,
         )
         self._catalog.add(record)
         logger.info(
@@ -93,6 +109,40 @@ class IngestionService:
             file_type,
             len(chunks),
         )
+        return record
+
+    def delete(self, document_id: str) -> None:
+        record = self._catalog.get(document_id)
+        self._vector_index.delete_document(document_id)
+        self._catalog.remove(document_id)
+        upload_dir = self._uploads_dir / document_id
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir, ignore_errors=True)
+        logger.info("ingestion.deleted document_id=%s filename=%s", document_id, record.filename)
+
+    def ensure_sample(self) -> DocumentRecord | None:
+        """Index the bundled sample JSON once so the UI has a demo document."""
+        if not self._settings.seed_sample_document:
+            return None
+        try:
+            return self._catalog.get(SAMPLE_DOCUMENT_ID)
+        except DocumentNotFoundError:
+            pass
+        root = sample_data_dir()
+        if root is None:
+            return None
+        path = root / SAMPLE_FILENAME
+        if not path.exists():
+            return None
+        self._vector_index.delete_document(SAMPLE_DOCUMENT_ID)
+        record = self.ingest(
+            filename=SAMPLE_FILENAME,
+            content_type="application/json",
+            data=path.read_bytes(),
+            document_id=SAMPLE_DOCUMENT_ID,
+            is_sample=True,
+        )
+        logger.info("ingestion.sample_ready chunks=%s", record.chunks)
         return record
 
 

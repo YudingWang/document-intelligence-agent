@@ -38,6 +38,13 @@ class DocumentCatalog:
                 reverse=True,
             )
 
+    def remove(self, document_id: str) -> None:
+        with self._lock:
+            if document_id not in self._records:
+                raise DocumentNotFoundError(f"Document '{document_id}' was not found.")
+            del self._records[document_id]
+            self._dump()
+
     def _load(self) -> dict[str, DocumentRecord]:
         if not self.path.exists():
             return {}

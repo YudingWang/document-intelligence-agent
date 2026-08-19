@@ -51,37 +51,62 @@ def chunk_json_leaves(
     source: str,
     chunk_size: int,
 ) -> list[Chunk]:
-    """Pack leaves into chunks without dropping JSON paths."""
+    """Group leaves by parent object so citations stay on one JSON section."""
     chunks: list[Chunk] = []
-    bucket: list[str] = []
-    paths: list[str] = []
-    size = 0
     index = 0
-
-    def flush() -> None:
-        nonlocal bucket, paths, size, index
-        if not bucket:
-            return
-        chunks.append(
-            Chunk(
-                chunk_id=f"{document_id}_c{index:04d}",
-                document_id=document_id,
-                source=source,
-                text="\n".join(bucket),
-                json_path=paths[0] if len(paths) == 1 else f"{paths[0]}..{paths[-1]}",
-            )
-        )
-        index += 1
-        bucket, paths, size = [], [], 0
-
-    for leaf in leaves:
-        line = f"{leaf.path}: {leaf.value}"
-        if bucket and size + len(line) + 1 > chunk_size:
-            flush()
-        bucket.append(line)
-        paths.append(leaf.path)
-        size += len(line) + 1
-        if len(line) >= chunk_size:
-            flush()
-    flush()
+    for parent, group in _group_by_parent(leaves):
+        bucket: list[str] = []
+        size = 0
+        for leaf in group:
+            line = f"{leaf.path}: {leaf.value}"
+            if bucket and size + len(line) + 1 > chunk_size:
+                chunks.append(_json_chunk(document_id, source, index, bucket, parent))
+                index += 1
+                bucket, size = [], 0
+            bucket.append(line)
+            size += len(line) + 1
+            if len(line) >= chunk_size:
+                chunks.append(_json_chunk(document_id, source, index, bucket, parent))
+                index += 1
+                bucket, size = [], 0
+        if bucket:
+            chunks.append(_json_chunk(document_id, source, index, bucket, parent))
+            index += 1
     return chunks
+
+
+def json_section_path(path: str) -> str:
+    """Citation path: parent object, or the leaf itself for top-level scalars."""
+    if path.endswith("]"):
+        bracket = path.rfind("[")
+        return path[:bracket] if bracket > 0 else path
+    if path.count(".") <= 1:
+        return path
+    return path.rsplit(".", 1)[0]
+
+
+def _group_by_parent(leaves: list[JsonLeaf]) -> list[tuple[str, list[JsonLeaf]]]:
+    groups: list[tuple[str, list[JsonLeaf]]] = []
+    for leaf in leaves:
+        parent = json_section_path(leaf.path)
+        if groups and groups[-1][0] == parent:
+            groups[-1][1].append(leaf)
+        else:
+            groups.append((parent, [leaf]))
+    return groups
+
+
+def _json_chunk(
+    document_id: str,
+    source: str,
+    index: int,
+    lines: list[str],
+    json_path: str,
+) -> Chunk:
+    return Chunk(
+        chunk_id=f"{document_id}_c{index:04d}",
+        document_id=document_id,
+        source=source,
+        text="\n".join(lines),
+        json_path=json_path,
+    )

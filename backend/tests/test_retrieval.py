@@ -36,6 +36,12 @@ def test_search_filters_by_document_id() -> None:
     loaded = store.get_by_ids(["b1", "a1"])
     assert [item.chunk_id for item in loaded] == ["b1", "a1"]
 
+    store.delete_document("doc_b")
+    assert store.search("Which cloud provider is used?", "doc_b", k=3) == []
+    leftover = store.search("Azure", "doc_a", k=3)
+    assert leftover
+    assert all(hit.document_id == "doc_a" for hit in leftover)
+
 
 def test_read_section_includes_neighbors() -> None:
     store = LangChainVectorIndex(InMemoryVectorStore(embedding=TokenHashEmbeddings()))

@@ -63,5 +63,25 @@ def test_chunking_assigns_ids() -> None:
     json_chunks = chunk_json_leaves(
         leaves, document_id="doc_2", source="a.json", chunk_size=1000
     )
-    assert json_chunks[0].json_path
+    assert json_chunks[0].json_path == "$.a"
     assert "$.a" in json_chunks[0].text
+
+
+def test_json_chunks_follow_object_sections() -> None:
+    payload = {
+        "company": "Acme",
+        "security": {
+            "cloud_providers": ["AWS", "GCP"],
+            "monitoring": {"apm": True, "dem": False},
+        },
+    }
+    chunks = chunk_json_leaves(
+        flatten_json(payload), document_id="doc_3", source="policy.json", chunk_size=1000
+    )
+    by_path = {chunk.json_path: chunk.text for chunk in chunks}
+    assert "$.company" in by_path
+    assert "$.security.cloud_providers" in by_path
+    assert "$.security.monitoring" in by_path
+    assert ".." not in "".join(by_path)
+    assert "AWS" in by_path["$.security.cloud_providers"]
+    assert "apm" in by_path["$.security.monitoring"]
