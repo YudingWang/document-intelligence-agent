@@ -15,7 +15,7 @@ from app.repositories.embeddings import create_embeddings
 from app.repositories.vector_index import create_vector_index
 from app.services.ingestion import IngestionService
 from app.services.qa import QAService
-from app.services.retrieval import RetrievalService
+from app.tools.documents import DocumentTools
 
 
 @dataclass
@@ -40,9 +40,9 @@ def build_container(
     embedder = embeddings or create_embeddings(settings)
     vector_index = create_vector_index(settings, embedder)
     catalog = DocumentCatalog(data_dir / "catalog.json")
-    retrieval = RetrievalService(catalog, vector_index)
+    tools = DocumentTools(catalog, vector_index)
     llm_client = llm or OpenAILLMClient(settings)
-    agent = DocumentQAAgent(settings, llm_client, retrieval)
+    agent = DocumentQAAgent(settings, llm_client, tools)
     ingestion = IngestionService(
         settings,
         catalog,

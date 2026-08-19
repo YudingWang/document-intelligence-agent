@@ -1,1 +1,1 @@
-"""Application services: ingestion, retrieval, batch QA."""
+"""Application services: ingestion and batch QA."""

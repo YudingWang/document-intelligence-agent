@@ -7,11 +7,11 @@ from typing import Protocol
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from app.agents.prompts import REWRITE_PROMPT, SYSTEM_PROMPT
+from app.agents.prompts import CONTEXTUALIZE_PROMPT, REWRITE_PROMPT, SYSTEM_PROMPT
 from app.core.config import Settings
 from app.core.exceptions import LLMServiceError
 from app.core.secrets import require_openai_key
-from app.models.domain import GroundedAnswer, RetrievedChunk
+from app.models.domain import ChatTurn, GroundedAnswer, RetrievedChunk
 
 
 class LLMClient(Protocol):
@@ -21,6 +21,10 @@ class LLMClient(Protocol):
 
     async def rewrite_query(
         self, question: str, chunks: list[RetrievedChunk]
+    ) -> str: ...
+
+    async def standalone_query(
+        self, question: str, history: list[ChatTurn]
     ) -> str: ...
 
 
@@ -58,22 +62,44 @@ class OpenAILLMClient:
         self, question: str, chunks: list[RetrievedChunk]
     ) -> str:
         """Short completion: better search terms, not a full answer."""
-        self._ensure_ready()
         evidence = "\n".join(chunk.text[:400] for chunk in chunks[:4]) or "(no chunks)"
-        prompt = (
-            f"{REWRITE_PROMPT}\n\nQuestion:\n{question}\n\nWeak evidence:\n{evidence}"
+        return await self._complete(
+            "You rewrite retrieval queries.",
+            f"{REWRITE_PROMPT}\n\nQuestion:\n{question}\n\nWeak evidence:\n{evidence}",
+            fallback=question,
+            error="The language model failed while rewriting the query.",
         )
+
+    async def standalone_query(self, question: str, history: list[ChatTurn]) -> str:
+        """Resolve follow-ups like 'what region?' without using history as evidence."""
+        if not history:
+            return question
+        transcript = "\n".join(
+            f"{'User' if turn.role == 'user' else 'Assistant'}: {turn.text[:500]}"
+            for turn in history[-6:]
+        )
+        return await self._complete(
+            "You rewrite follow-up questions.",
+            (
+                f"{CONTEXTUALIZE_PROMPT}\n\nChat history:\n{transcript}\n\n"
+                f"Latest question:\n{question}"
+            ),
+            fallback=question,
+            error="The language model failed while resolving the follow-up question.",
+        )
+
+    async def _complete(
+        self, system: str, prompt: str, *, fallback: str, error: str
+    ) -> str:
+        self._ensure_ready()
         try:
             response = await self._chat.ainvoke(
-                [
-                    SystemMessage(content="You rewrite retrieval queries."),
-                    HumanMessage(content=prompt),
-                ]
+                [SystemMessage(content=system), HumanMessage(content=prompt)]
             )
         except Exception as exc:  # noqa: BLE001
-            raise LLMServiceError("The language model failed while rewriting the query.") from exc
+            raise LLMServiceError(error) from exc
         text = response.content if isinstance(response.content, str) else str(response.content)
-        return text.strip() or question
+        return text.strip() or fallback
 
 
 def _format_generate_prompt(question: str, chunks: list[RetrievedChunk]) -> str:

@@ -8,7 +8,7 @@ import logging
 from app.agents.graph import DocumentQAAgent
 from app.core.config import Settings
 from app.core.logging import document_id_var
-from app.models.domain import QAResult
+from app.models.domain import ChatTurn, QAResult
 from app.repositories.document_catalog import DocumentCatalog
 
 logger = logging.getLogger(__name__)
@@ -25,11 +25,16 @@ class QAService:
         self._catalog = catalog
         self._agent = agent
 
-    async def answer_one(self, document_id: str, question: str) -> QAResult:
+    async def answer_one(
+        self,
+        document_id: str,
+        question: str,
+        history: list[ChatTurn] | None = None,
+    ) -> QAResult:
         self._catalog.get(document_id)
         token = document_id_var.set(document_id)
         try:
-            result = await self._agent.answer(question, document_id)
+            result = await self._agent.answer(question, document_id, history=history)
         finally:
             document_id_var.reset(token)
         logger.info(

@@ -23,3 +23,11 @@ Write a short search query (not an answer) that is more likely to match the docu
 Use concrete terms from the question such as product names, SLAs, cloud providers, regions, or monitoring acronyms.
 Return only the search query.
 """
+
+CONTEXTUALIZE_PROMPT = """Rewrite the latest user question as a standalone document question.
+
+Use the chat history only to resolve references such as "it", "that", or "what region".
+Do not treat prior assistant answers as facts. Do not answer the question.
+If the latest question is already standalone, return it unchanged.
+Return only the rewritten question.
+"""

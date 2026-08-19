@@ -104,6 +104,39 @@ def test_batch_and_chat(client: TestClient) -> None:
     assert "answer" in chat.json()
 
 
+def test_upload_sanitizes_filename(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/documents",
+        files={"document": ("../etc/my file.json", SAMPLE_JSON.read_bytes(), "application/json")},
+    )
+    assert response.status_code == 200
+    assert response.json()["filename"] == "my_file.json"
+    assert ".." not in response.json()["filename"]
+    assert "/" not in response.json()["filename"]
+
+
+def test_chat_history_is_accepted(client: TestClient, stub_llm) -> None:
+    upload = client.post(
+        "/api/v1/documents",
+        files={"document": ("vendor_security.json", SAMPLE_JSON.read_bytes(), "application/json")},
+    )
+    document_id = upload.json()["document_id"]
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "document_id": document_id,
+            "message": "What region?",
+            "history": [
+                {"role": "user", "text": "Which cloud providers do you rely on?"},
+                {"role": "agent", "text": "AWS is the primary provider."},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["question"] == "What region?"
+    assert stub_llm.standalone_calls == 1
+
+
 def test_malformed_questions(client: TestClient) -> None:
     upload = client.post(
         "/api/v1/documents",

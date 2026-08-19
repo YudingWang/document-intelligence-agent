@@ -37,6 +37,7 @@ class StubLLM:
     def __init__(self) -> None:
         self.generate_calls = 0
         self.rewrite_calls = 0
+        self.standalone_calls = 0
 
     async def generate_answer(
         self, question: str, chunks: list[RetrievedChunk]
@@ -57,6 +58,13 @@ class StubLLM:
     async def rewrite_query(self, question: str, chunks: list[RetrievedChunk]) -> str:
         self.rewrite_calls += 1
         return f"{question} SLA AWS Datadog monitoring data center"
+
+    async def standalone_query(self, question: str, history) -> str:
+        self.standalone_calls += 1
+        prior = " ".join(item.text for item in history)
+        if "region" in question.lower() and "aws" in prior.lower():
+            return "What AWS region or data center location is specified?"
+        return question
 
 
 @pytest.fixture

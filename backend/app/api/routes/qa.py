@@ -1,10 +1,9 @@
-"""Question-answering routes: one-shot, batch, and single-turn chat."""
+"""Question-answering routes: one-shot, batch, and chat."""
 
 from fastapi import APIRouter, File, Form, UploadFile
 
 from app.api.deps import ContainerDep
 from app.api.uploads import read_upload
-from app.core.exceptions import InvalidInputError
 from app.core.logging import document_id_var
 from app.loaders.questions import parse_questions_file
 from app.models.schemas import BatchQAResponse, ChatRequest, ChatResponse
@@ -59,11 +58,12 @@ async def batch_qa(
 
 @router.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(container: ContainerDep, payload: ChatRequest) -> ChatResponse:
-    """Answer one follow-up against the selected document."""
-    message = payload.message.strip()
-    if not message:
-        raise InvalidInputError("Message cannot be empty.")
-    result = await container.qa.answer_one(payload.document_id, message)
+    """Answer a question, using history only to resolve follow-up references."""
+    result = await container.qa.answer_one(
+        payload.document_id,
+        payload.message,
+        history=payload.history,
+    )
     return ChatResponse(
         document_id=payload.document_id,
         question=result.question,

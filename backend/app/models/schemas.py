@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.models.domain import Citation, DocumentRecord, QAResult
+from app.models.domain import ChatTurn, Citation, DocumentRecord, QAResult
 
 
 class ErrorResponse(BaseModel):
@@ -27,6 +27,12 @@ class DocumentListResponse(BaseModel):
 class ChatRequest(BaseModel):
     document_id: str
     message: str = Field(min_length=1, max_length=8000)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=6)
+
+    @field_validator("message", mode="before")
+    @classmethod
+    def strip_message(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class ChatResponse(BaseModel):

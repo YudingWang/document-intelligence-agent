@@ -35,6 +35,13 @@ class Citation(BaseModel):
     chunk_id: str | None = None
 
 
+class ChatTurn(BaseModel):
+    """One prior chat message. Used only to resolve follow-up questions."""
+
+    role: Literal["user", "agent"]
+    text: str = Field(min_length=1, max_length=8000)
+
+
 class GroundedAnswer(BaseModel):
     """Structured output we ask gpt-4o-mini to return."""
 

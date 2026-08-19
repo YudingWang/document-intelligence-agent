@@ -5,6 +5,8 @@ Flow (max two retrievals, at most one generation):
     retrieve → evaluate evidence
         ├─ sufficient → generate → END
         └─ not enough → rewrite query → retrieve → generate → END
+
+Retries accumulate and dedupe chunks instead of replacing the first hit set.
 """
 
 from __future__ import annotations
@@ -20,11 +22,12 @@ from app.agents.llm import LLMClient
 from app.core.config import Settings
 from app.models.domain import (
     NOT_FOUND_ANSWER,
+    ChatTurn,
     Citation,
     QAResult,
     RetrievedChunk,
 )
-from app.services.retrieval import RetrievalService
+from app.tools.documents import DocumentTools, merge_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +53,11 @@ class DocumentQAAgent:
         self,
         settings: Settings,
         llm: LLMClient,
-        retrieval: RetrievalService,
+        tools: DocumentTools,
     ) -> None:
         self._settings = settings
         self._llm = llm
-        self._retrieval = retrieval
+        self._tools = tools
         self._graph = self._build_graph()
 
     def _build_graph(self):
@@ -74,14 +77,25 @@ class DocumentQAAgent:
         graph.add_edge("generate", END)
         return graph.compile()
 
-    async def answer(self, question: str, document_id: str) -> QAResult:
+    async def answer(
+        self,
+        question: str,
+        document_id: str,
+        history: list[ChatTurn] | None = None,
+    ) -> QAResult:
         """Answer one question using only chunks from `document_id`."""
         started = time.perf_counter()
+        resolved = question
+        llm_ms = 0
+        if history:
+            rewrite_started = time.perf_counter()
+            resolved = await self._llm.standalone_query(question, history)
+            llm_ms = int((time.perf_counter() - rewrite_started) * 1000)
         state = await self._graph.ainvoke(
             {
-                "question": question,
+                "question": resolved,
                 "document_id": document_id,
-                "query": question,
+                "query": resolved,
                 "search_attempts": 0,
                 "chunks": [],
                 "evidence_sufficient": False,
@@ -89,7 +103,7 @@ class DocumentQAAgent:
                 "supported": False,
                 "citations": [],
                 "retrieval_latency_ms": 0,
-                "llm_latency_ms": 0,
+                "llm_latency_ms": llm_ms,
             }
         )
         total_ms = int((time.perf_counter() - started) * 1000)
@@ -106,16 +120,22 @@ class DocumentQAAgent:
 
     async def _retrieve(self, state: AgentState) -> dict[str, Any]:
         started = time.perf_counter()
-        chunks = self._retrieval.search(
-            state["document_id"],
+        document_id = state["document_id"]
+        hits = self._tools.search_document(
+            document_id,
             state["query"],
             k=self._settings.retrieval_top_k,
         )
+        expanded: list[RetrievedChunk] = []
+        for hit in hits:
+            expanded.extend(self._tools.read_document_section(document_id, hit.chunk_id))
+        chunks = merge_chunks(state.get("chunks") or [], hits + expanded)
         elapsed = int((time.perf_counter() - started) * 1000)
         attempt = int(state.get("search_attempts") or 0) + 1
         logger.info(
-            "agent.retrieve query=%r hits=%s attempt=%s",
+            "agent.retrieve query=%r hits=%s evidence=%s attempt=%s",
             state["query"][:120],
+            len(hits),
             len(chunks),
             attempt,
         )

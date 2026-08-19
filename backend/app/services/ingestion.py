@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from pathlib import Path
 
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 PDF_TYPES = {"application/pdf"}
 JSON_TYPES = {"application/json", "text/json"}
+_UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class IngestionService:
@@ -37,6 +39,7 @@ class IngestionService:
         self._uploads_dir.mkdir(parents=True, exist_ok=True)
 
     def ingest(self, *, filename: str, content_type: str | None, data: bytes) -> DocumentRecord:
+        filename = safe_filename(filename)
         file_type = detect_file_type(filename, content_type, data)
         if self._settings.embedding_backend.lower() != "fake":
             require_openai_key(self._settings)
@@ -91,6 +94,13 @@ class IngestionService:
             len(chunks),
         )
         return record
+
+
+def safe_filename(name: str) -> str:
+    """Keep only the basename and a conservative character set."""
+    base = Path(name or "document").name
+    cleaned = _UNSAFE_FILENAME.sub("_", base).strip("._")
+    return (cleaned or "document")[:120]
 
 
 def detect_file_type(filename: str, content_type: str | None, data: bytes) -> str:
